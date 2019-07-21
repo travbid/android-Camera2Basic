@@ -535,6 +535,49 @@ class Camera2BasicFragment : Fragment(), View.OnClickListener,
                         override fun onConfigureFailed(session: CameraCaptureSession) {
                             activity.showToast("Failed")
                         }
+
+                        override fun onReady(session: CameraCaptureSession) {
+                            if (state == STATE_PREVIEW) {
+                                return
+                            }
+
+                            try {
+                                if (activity == null || cameraDevice == null) return
+                                val rotation = activity!!.windowManager.defaultDisplay.rotation
+
+                                // This is the CaptureRequest.Builder that we use to take a picture.
+                                val captureBuilder = cameraDevice?.createCaptureRequest(
+                                      CameraDevice.TEMPLATE_STILL_CAPTURE)?.apply {
+                                    addTarget(imageReader?.surface)
+
+                                    // Sensor orientation is 90 for most devices, or 270 for some devices (eg. Nexus 5X)
+                                    // We have to take that into account and rotate JPEG properly.
+                                    // For devices with orientation of 90, we return our mapping from ORIENTATIONS.
+                                    // For devices with orientation of 270, we need to rotate the JPEG 180 degrees.
+                                    set(CaptureRequest.JPEG_ORIENTATION,
+                                          (ORIENTATIONS.get(rotation) + sensorOrientation + 270) % 360)
+
+                                    // Use the same AE and AF modes as the preview.
+                                    set(CaptureRequest.CONTROL_AF_MODE,
+                                          CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                                }?.also { setAutoFlash(it) }
+
+                                val captureCallback = object : CameraCaptureSession.CaptureCallback() {
+
+                                    override fun onCaptureCompleted(session: CameraCaptureSession,
+                                                                    request: CaptureRequest,
+                                                                    result: TotalCaptureResult) {
+                                        activity!!.showToast("Saved: $file")
+                                        Log.d(TAG, file.toString())
+                                        unlockFocus()
+                                    }
+                                }
+
+                                captureSession?.capture(captureBuilder?.build(), captureCallback, null)
+                            } catch (e: CameraAccessException) {
+                                Log.e(TAG, e.toString())
+                            }
+                        }
                     }, null)
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
@@ -618,41 +661,9 @@ class Camera2BasicFragment : Fragment(), View.OnClickListener,
      */
     private fun captureStillPicture() {
         try {
-            if (activity == null || cameraDevice == null) return
-            val rotation = activity.windowManager.defaultDisplay.rotation
-
-            // This is the CaptureRequest.Builder that we use to take a picture.
-            val captureBuilder = cameraDevice?.createCaptureRequest(
-                    CameraDevice.TEMPLATE_STILL_CAPTURE)?.apply {
-                addTarget(imageReader?.surface)
-
-                // Sensor orientation is 90 for most devices, or 270 for some devices (eg. Nexus 5X)
-                // We have to take that into account and rotate JPEG properly.
-                // For devices with orientation of 90, we return our mapping from ORIENTATIONS.
-                // For devices with orientation of 270, we need to rotate the JPEG 180 degrees.
-                set(CaptureRequest.JPEG_ORIENTATION,
-                        (ORIENTATIONS.get(rotation) + sensorOrientation + 270) % 360)
-
-                // Use the same AE and AF modes as the preview.
-                set(CaptureRequest.CONTROL_AF_MODE,
-                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-            }?.also { setAutoFlash(it) }
-
-            val captureCallback = object : CameraCaptureSession.CaptureCallback() {
-
-                override fun onCaptureCompleted(session: CameraCaptureSession,
-                        request: CaptureRequest,
-                        result: TotalCaptureResult) {
-                    activity.showToast("Saved: $file")
-                    Log.d(TAG, file.toString())
-                    unlockFocus()
-                }
-            }
-
             captureSession?.apply {
                 stopRepeating()
                 abortCaptures()
-                capture(captureBuilder?.build(), captureCallback, null)
             }
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
